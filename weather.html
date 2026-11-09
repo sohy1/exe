@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리동네 날씨</title>
+<style>
+  :root {
+    --bg: #eef2f7; --card: #ffffff; --text: #1b2430; --muted: #6b7686;
+    --line: #e1e6ee; --accent: #2f6fed; --accent-soft: #e5edff;
+    --good: #2a9d5c; --normal: #2f6fed; --bad: #e08a00; --verybad: #d63b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151d; --card: #19202b; --text: #e8edf4; --muted: #8d98a8;
+      --line: #2a3340; --accent: #6d9bff; --accent-soft: #22304a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 24px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+  button.refresh {
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  button.refresh:hover { border-color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--card); border: 2px solid transparent; border-radius: 16px;
+    padding: 16px; cursor: pointer; transition: border-color .15s, transform .15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card:hover { transform: translateY(-2px); }
+  .card.active { border-color: var(--accent); }
+  .card .name { font-weight: 700; font-size: 15px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .card .row { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+  .card .temp { font-size: 40px; font-weight: 700; letter-spacing: -1px; }
+  .card .icon { font-size: 44px; }
+  .card .desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .card .hl { font-size: 13px; margin-top: 2px; }
+
+  .detail { background: var(--card); border-radius: 16px; padding: 20px; margin-top: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .detail h2 { margin: 0; font-size: 20px; }
+  .detail .clock { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .now { display: flex; align-items: center; gap: 18px; margin: 16px 0 6px; flex-wrap: wrap; }
+  .now .big { font-size: 64px; font-weight: 700; letter-spacing: -2px; line-height: 1; }
+  .now .icon { font-size: 64px; }
+  .now .txt { font-size: 15px; }
+  .now .txt div:first-child { font-weight: 600; font-size: 17px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
+  .stat { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 22px 0 10px; }
+
+  .hourly { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+  .hour { flex: 0 0 64px; text-align: center; border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px; font-size: 13px; }
+  .hour .h { color: var(--muted); font-size: 12px; }
+  .hour .i { font-size: 22px; margin: 4px 0; }
+  .hour .t { font-weight: 600; }
+  .hour .p { color: var(--accent); font-size: 11px; margin-top: 2px; min-height: 13px; }
+
+  .daily { display: flex; flex-direction: column; }
+  .day { display: grid; grid-template-columns: 70px 34px 46px 1fr 46px; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .day:first-child { border-top: none; }
+  .day .d { font-weight: 600; }
+  .day .i { font-size: 22px; text-align: center; }
+  .day .lo { color: var(--muted); text-align: right; }
+  .day .hi { font-weight: 600; }
+  .day .pp { color: var(--accent); font-size: 11px; display: block; }
+  .bar { position: relative; height: 6px; background: var(--line); border-radius: 3px; }
+  .bar span { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, #5aa7ff, #ffb347); }
+
+  .aq { font-weight: 700; }
+  .diff { display: inline-block; margin-top: 10px; font-size: 12px; font-weight: 600; border: 1px solid; border-radius: 999px; padding: 3px 9px; }
+  .cmps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .cmp { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .cmp .k { font-size: 12px; color: var(--muted); }
+  .cmp .v { font-size: 20px; font-weight: 700; margin-top: 3px; }
+  .cmp .v span { font-size: 14px; }
+  .cmp .y { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .day.past { opacity: .5; }
+
+  .c-outfit { font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .outfit { border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .o-head { display: flex; align-items: center; gap: 14px; }
+  .o-icon { font-size: 46px; }
+  .o-title { font-size: 19px; font-weight: 700; }
+  .o-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .o-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 14px; }
+  .o-items div { background: var(--accent-soft); border-radius: 10px; padding: 9px 12px; font-size: 14px; font-weight: 600; }
+  .o-items span { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-bottom: 2px; }
+  .o-tips { margin: 14px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+  .o-fb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .o-fb-q { font-size: 13px; color: var(--muted); }
+  .o-fb-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .o-fb-btns button {
+    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  .o-fb-btns button:hover { border-color: var(--accent); }
+  .o-fb-state { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .o-fb-state a { color: var(--accent); }
+
+  .search { display: flex; gap: 8px; margin-bottom: 8px; }
+  .search input {
+    flex: 1; min-width: 0; font: inherit; font-size: 15px; padding: 11px 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text);
+  }
+  .search input:focus { outline: none; border-color: var(--accent); }
+  .search button {
+    font: inherit; font-size: 15px; padding: 0 18px; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; cursor: pointer; font-weight: 600;
+  }
+  .results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .r-item {
+    text-align: left; font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 10px; padding: 10px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  }
+  .r-item:hover { border-color: var(--accent); }
+  .r-name { font-weight: 600; font-size: 14px; }
+  .r-sub, .r-msg { font-size: 12px; color: var(--muted); }
+  .r-msg { padding: 8px 2px; }
+  .group-title { font-size: 14px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; }
+  .card { position: relative; }
+  .card.fixed { background: linear-gradient(180deg, var(--accent-soft), var(--card) 70%); }
+  .rm {
+    position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%;
+    border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
+  }
+  .rm:hover { background: var(--line); color: var(--text); }
+  .loading, .error { color: var(--muted); padding: 30px; text-align: center; }
+  .error { color: var(--verybad); }
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+  footer a { color: inherit; }
+  @media (max-width: 520px) {
+    .day { grid-template-columns: 56px 28px 40px 1fr 40px; gap: 6px; }
+    .now .big { font-size: 52px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🌤️ 우리동네 날씨</h1>
+    <div class="meta">
+      <span id="updated">불러오는 중…</span>
+      <button class="refresh" id="refreshBtn">↻ 새로고침</button>
+    </div>
+  </header>
+
+  <form class="search" id="searchForm" autocomplete="off">
+    <input id="q" type="search" placeholder="다른 지역 검색 (예: 해운대, 강남역, 제주 애월읍, Tokyo)">
+    <button type="submit">검색</button>
+  </form>
+  <div class="results" id="results"></div>
+
+  <div class="group-title">⭐ 내 지역</div>
+  <div class="grid" id="cards"></div>
+  <div class="group-title" id="customTitle" style="display:none">추가한 지역</div>
+  <div class="grid" id="customCards"></div>
+  <div class="detail" id="detail"><div class="loading">날씨 정보를 불러오는 중입니다…</div></div>
+
+  <footer>데이터: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (날씨 · 대기질) · 지역 검색: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · 10분마다 자동 갱신</footer>
+</div>
+
+<script>
+// 고정 지역 (항상 맨 위에 강조 표시)
+const FIXED = [
+  { id: "wonju",  name: "원주 무실동",       sub: "강원도 원주시 무실동",        lat: 37.3346, lon: 127.9283, fixed: true },
+  { id: "yangjae",name: "서울 양재역",       sub: "서울특별시 서초구 양재역",    lat: 37.4844, lon: 127.0343, fixed: true },
+  { id: "jeonju", name: "전주 진북동",       sub: "전북 전주시 덕진구 진북동",   lat: 35.8310, lon: 127.1430, fixed: true },
+  { id: "melb",   name: "멜버른 CBD",        sub: "호주 빅토리아주 멜버른",       lat: -37.8136, lon: 144.9631, fixed: true },
+];
+
+// 검색으로 추가한 지역 (브라우저에 저장)
+const STORE_KEY = "weather.customLocations";
+function loadCustom() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+}
+function saveCustom() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state.custom)); } catch {}
+}
+const allLocations = () => [...FIXED, ...state.custom];
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
+
+const WMO = {
+  0:["맑음","☀️","🌙"], 1:["대체로 맑음","🌤️","🌙"], 2:["구름 조금","⛅","☁️"], 3:["흐림","☁️","☁️"],
+  45:["안개","🌫️"], 48:["서리 안개","🌫️"],
+  51:["약한 이슬비","🌦️"], 53:["이슬비","🌦️"], 55:["강한 이슬비","🌧️"],
+  56:["어는 이슬비","🌧️"], 57:["강한 어는 이슬비","🌧️"],
+  61:["약한 비","🌦️"], 63:["비","🌧️"], 65:["강한 비","🌧️"],
+  66:["어는 비","🌧️"], 67:["강한 어는 비","🌧️"],
+  71:["약한 눈","🌨️"], 73:["눈","🌨️"], 75:["폭설","❄️"], 77:["싸락눈","🌨️"],
+  80:["약한 소나기","🌦️"], 81:["소나기","🌧️"], 82:["강한 소나기","⛈️"],
+  85:["약한 소낙눈","🌨️"], 86:["강한 소낙눈","❄️"],
+  95:["뇌우","⛈️"], 96:["우박 동반 뇌우","⛈️"], 99:["강한 우박 뇌우","⛈️"],
+};
+const wmo = (code, isDay = 1) => {
+  const w = WMO[code] || ["알 수 없음", "❔"];
+  return { text: w[0], icon: (!isDay && w[2]) ? w[2] : w[1] };
+};
+const DAYS = ["일","월","화","수","목","금","토"];
+const WIND_DIRS = ["북","북동","동","남동","남","남서","서","북서"];
+const windDir = deg => WIND_DIRS[Math.round(deg / 45) % 8];
+
+function pmGrade(v, type) {
+  if (v == null) return { t: "-", c: "var(--muted)" };
+  const cut = type === "pm10" ? [30, 80, 150] : [15, 35, 75];
+  if (v <= cut[0]) return { t: "좋음", c: "var(--good)" };
+  if (v <= cut[1]) return { t: "보통", c: "var(--normal)" };
+  if (v <= cut[2]) return { t: "나쁨", c: "var(--bad)" };
+  return { t: "매우나쁨", c: "var(--verybad)" };
+}
+function uvGrade(v) {
+  if (v == null) return "-";
+  if (v < 3) return "낮음"; if (v < 6) return "보통"; if (v < 8) return "높음";
+  if (v < 11) return "매우높음"; return "위험";
+}
+
+const state = { data: {}, selected: FIXED[0].id, custom: loadCustom(), results: [] };
+
+async function fetchLocation(loc) {
+  const w = new URL("https://api.open-meteo.com/v1/forecast");
+  w.search = new URLSearchParams({
+    latitude: loc.lat, longitude: loc.lon, timezone: "auto", forecast_days: 7, past_days: 1,
+    current: "temperature_2m,apparent_temperature,relative_humidity_2m,is_day,weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,cloud_cover",
+    hourly: "temperature_2m,apparent_temperature,weather_code,precipitation_probability,is_day,wind_speed_10m",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max",
+    wind_speed_unit: "ms",
+  });
+  const a = new URL("https://air-quality-api.open-meteo.com/v1/air-quality");
+  a.search = new URLSearchParams({ latitude: loc.lat, longitude: loc.lon, timezone: "auto", current: "pm10,pm2_5" });
+
+  const [wr, ar] = await Promise.all([fetch(w), fetch(a).catch(() => null)]);
+  if (!wr.ok) throw new Error("날씨 요청 실패 (" + wr.status + ")");
+  const weather = await wr.json();
+  let air = null;
+  if (ar && ar.ok) air = (await ar.json()).current;
+  return { weather, air };
+}
+
+async function loadAll() {
+  document.getElementById("updated").textContent = "불러오는 중…";
+  const locs = allLocations();
+  const results = await Promise.allSettled(locs.map(fetchLocation));
+  results.forEach((r, i) => {
+    state.data[locs[i].id] = r.status === "fulfilled" ? r.value : { error: r.reason?.message || "오류" };
+  });
+  const now = new Date();
+  document.getElementById("updated").textContent =
+    "업데이트 " + now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  render();
+}
+
+function localNow(weather) {
+  // 해당 지역의 현지 시각 (utc_offset_seconds 기준)
+  const d = new Date(Date.now() + weather.utc_offset_seconds * 1000);
+  return d; // UTC getter로 읽으면 현지 시각
+}
+function fmtLocalClock(weather) {
+  const d = localNow(weather);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getUTCMonth()+1}월 ${d.getUTCDate()}일 (${DAYS[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+const r0 = v => Math.round(v);
+
+// past_days=1 이므로 daily[0]=어제, daily[1]=오늘
+const TODAY = 1;
+// 어제 같은 시각 기온 (hourly는 어제 00시부터 시작)
+function yesterdaySameHour(weather) {
+  const h = weather.hourly;
+  const idx = h.time.indexOf(weather.current.time.slice(0, 13) + ":00");
+  return idx >= 24 ? h.temperature_2m[idx - 24] : null;
+}
+// 어제 대비 문구 + 색
+function diffInfo(now, past) {
+  if (now == null || past == null) return null;
+  const d = Math.round(now - past);
+  if (d === 0) return { text: "어제와 비슷해요", short: "±0°", color: "var(--muted)", arrow: "＝" };
+  if (d > 0)   return { text: `어제보다 ${d}° 높아요`, short: `+${d}°`, color: "#e4572e", arrow: "▲" };
+  return { text: `어제보다 ${-d}° 낮아요`, short: `${d}°`, color: "#2f80ed", arrow: "▼" };
+}
+// ---- 출근 옷차림 추천 ----
+// 기준: 출근 시간(7~9시) 체감온도 + 내 체감 보정값
+const OUTFITS = [
+  { min: 28, icon: "🩳", title: "한여름 옷차림",   outer: "필요 없어요",                 top: "반팔·민소매·린넨 셔츠", bottom: "반바지·린넨 바지",   acc: "" },
+  { min: 23, icon: "👕", title: "반팔 옷차림",     outer: "필요 없어요 (사무실 냉방이 세면 얇은 셔츠)", top: "반팔 티·얇은 셔츠", bottom: "면바지·슬랙스", acc: "" },
+  { min: 20, icon: "👔", title: "얇은 긴팔",       outer: "얇은 가디건 (선택)",          top: "긴팔 티·셔츠",          bottom: "면바지·청바지",      acc: "" },
+  { min: 17, icon: "🧶", title: "가벼운 겉옷",     outer: "가디건·얇은 바람막이",        top: "얇은 니트·맨투맨",      bottom: "청바지·면바지",      acc: "" },
+  { min: 12, icon: "🧥", title: "자켓 차림",       outer: "자켓·야상·가디건",            top: "맨투맨·셔츠·얇은 니트", bottom: "청바지·슬랙스",      acc: "" },
+  { min: 9,  icon: "🧥", title: "트렌치코트 차림", outer: "트렌치코트·두꺼운 자켓",      top: "니트",                  bottom: "청바지·두께 있는 바지", acc: "" },
+  { min: 5,  icon: "🧥", title: "코트 차림",       outer: "울 코트·가죽자켓",            top: "니트 + 히트텍",         bottom: "두꺼운 바지·기모 스타킹", acc: "얇은 목도리" },
+  { min: -5, icon: "🧣", title: "패딩 차림",       outer: "패딩·두꺼운 코트",            top: "두꺼운 니트 + 히트텍",  bottom: "기모 바지",          acc: "목도리" },
+  { min: -Infinity, icon: "🥶", title: "한겨울 완전무장", outer: "롱패딩",              top: "히트텍 + 기모 맨투맨·두꺼운 니트", bottom: "기모 바지 (+내복)", acc: "목도리·장갑·귀마개, 핫팩" },
+];
+const OFFSET_KEY = "weather.outfitOffset";
+function getOffset() { try { return +localStorage.getItem(OFFSET_KEY) || 0; } catch { return 0; } }
+function setOffset(v) { try { localStorage.setItem(OFFSET_KEY, String(v)); } catch {} }
+
+function outfitPlan(weather, air) {
+  const h = weather.hourly, dy = weather.daily;
+  const hr = localNow(weather).getUTCHours();
+  const di = hr >= 18 ? TODAY + 1 : TODAY;           // 저녁 6시 이후면 내일 아침 기준
+  const pick = (date, hours, arr) => hours
+    .map(x => h.time.indexOf(`${date}T${String(x).padStart(2, "0")}:00`))
+    .filter(i => i >= 0).map(i => arr[i]).filter(v => v != null);
+  const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
+  const date = dy.time[di];
+  const DAY_HOURS = [7,8,9,10,11,12,13,14,15,16,17,18,19];
+
+  // 실제 기온과 체감온도의 중간값을 기준으로 (체감온도만 쓰면 바람 때문에 과하게 두꺼운 옷이 나옴)
+  const feel = (d, hrs) => {
+    const t = avg(pick(d, hrs, h.temperature_2m)), a = avg(pick(d, hrs, h.apparent_temperature));
+    return t == null || a == null ? null : (t + a) / 2;
+  };
+  const morningT = avg(pick(date, [7, 8, 9], h.temperature_2m));
+  const morningA = avg(pick(date, [7, 8, 9], h.apparent_temperature));
+  const morning  = feel(date, [7, 8, 9]);
+  const evening  = feel(date, [18, 19]);
+  const yMorning = feel(dy.time[di - 1], [7, 8, 9]);
+  const dayHigh  = dy.temperature_2m_max[di];
+  const rainMax  = Math.max(0, ...pick(date, DAY_HOURS, h.precipitation_probability));
+  const codes    = pick(date, DAY_HOURS, h.weather_code);
+  const snow     = codes.some(c => (c >= 71 && c <= 77) || c === 85 || c === 86);
+  const windMax  = Math.max(0, ...pick(date, [7, 8, 9, 18, 19], h.wind_speed_10m));
+  const uv       = dy.uv_index_max[di];
+  const offset   = getOffset();
+  if (morning == null) return null;
+
+  const eff = morning + offset;
+  const o = OUTFITS.find(x => eff >= x.min);
+  const tips = [];
+  if (dayHigh - morning >= 8)
+    tips.push(`🌡️ 일교차가 커요 (아침 약 ${r0(morning)}° → 낮 ${r0(dayHigh)}°). 겉옷은 벗기 쉬운 걸로, 안에는 얇게 겹쳐 입으세요.`);
+  if (evening != null && evening <= morning - 2)
+    tips.push(`🌙 퇴근길이 아침보다 추워요 (약 ${r0(evening)}°). 겉옷 꼭 챙기세요.`);
+  if (yMorning != null) {
+    const d = Math.round(morning - yMorning);
+    if (d <= -3) tips.push(`📉 어제 아침보다 ${-d}° 낮아요 → 어제보다 한 겹 더 입으세요.`);
+    else if (d >= 3) tips.push(`📈 어제 아침보다 ${d}° 높아요 → 어제보다 한 겹 가볍게 입어도 돼요.`);
+    else tips.push(`↔️ 어제 아침과 체감이 비슷해요 (${d >= 0 ? "+" : ""}${d}°). 어제 옷차림이 괜찮았다면 그대로!`);
+  }
+  if (snow) tips.push("❄️ 눈 소식이 있어요. 미끄럽지 않은 신발을 신으세요.");
+  if (rainMax >= 60) tips.push(`☂️ 비 올 확률 ${rainMax}% — 우산 꼭 챙기세요.`);
+  else if (rainMax >= 30) tips.push(`🌂 비 올 확률 ${rainMax}% — 접이식 우산을 가방에 넣어두세요.`);
+  if (windMax >= 6) tips.push(`💨 바람이 강해요 (최대 ${windMax.toFixed(1)} m/s). 바람 막아주는 겉옷이 좋아요.`);
+  if (uv >= 6) tips.push(`🧴 자외선이 강해요 (${uv.toFixed(1)}). 선크림을 바르세요.`);
+  if (di === TODAY && air && ((air.pm10 ?? 0) > 80 || (air.pm2_5 ?? 0) > 35))
+    tips.push("😷 미세먼지가 나빠요. 마스크를 챙기세요.");
+
+  return { when: di === TODAY ? "오늘" : "내일", morning, morningT, morningA, evening, dayHigh, offset, eff, o, tips };
+}
+
+function outfitHTML(p) {
+  if (!p) return "";
+  const offTxt = p.offset === 0 ? "보정 없음"
+    : p.offset < 0 ? `추위를 타는 편 → ${-p.offset}° 더 춥게 계산` : `더위를 타는 편 → ${p.offset}° 더 덥게 계산`;
+  return `
+    <div class="section-title">👔 ${p.when} 출근 옷차림</div>
+    <div class="outfit">
+      <div class="o-head">
+        <div class="o-icon">${p.o.icon}</div>
+        <div>
+          <div class="o-title">${p.o.title}</div>
+          <div class="o-sub">출근길(7~9시) <b>${r0(p.morningT)}°</b> (바람 고려 체감 ${r0(p.morningA)}°) · 낮 최고 ${r0(p.dayHigh)}°${p.evening != null ? ` · 퇴근길(18~19시) 약 ${r0(p.evening)}°` : ""}</div>
+        </div>
+      </div>
+      <div class="o-items">
+        <div><span>겉옷</span>${p.o.outer}</div>
+        <div><span>상의</span>${p.o.top}</div>
+        <div><span>하의</span>${p.o.bottom}</div>
+        ${p.o.acc ? `<div><span>소품</span>${p.o.acc}</div>` : ""}
+      </div>
+      ${p.tips.length ? `<ul class="o-tips">${p.tips.map(t => `<li>${t}</li>`).join("")}</ul>` : ""}
+      <div class="o-fb">
+        <div class="o-fb-q">추천대로 입고 나가보니 어땠어요? 알려주시면 다음 추천부터 내 체감에 맞춰 조정돼요.</div>
+        <div class="o-fb-btns">
+          <button data-fb="-1">🥶 추웠어요</button>
+          <button data-fb="0">😊 딱 좋았어요</button>
+          <button data-fb="1">🥵 더웠어요</button>
+        </div>
+        <div class="o-fb-state" id="fbState">내 체감 보정: ${offTxt}${p.offset !== 0 ? ` <a href="#" id="fbReset">초기화</a>` : ""}</div>
+      </div>
+    </div>`;
+}
+
+function bindOutfitFeedback() {
+  document.querySelectorAll("[data-fb]").forEach(b => b.onclick = () => {
+    const step = +b.dataset.fb;
+    let msg = "좋아요! 지금 기준을 유지할게요.";
+    if (step !== 0) {
+      const next = Math.max(-6, Math.min(6, getOffset() + step * 2));  // 한 번에 2°씩, 최대 ±6°
+      setOffset(next);
+      msg = step < 0 ? "다음부터 조금 더 따뜻하게 추천할게요." : "다음부터 조금 더 가볍게 추천할게요.";
+    }
+    render();
+    const s = document.getElementById("fbState");
+    if (s) s.insertAdjacentHTML("afterbegin", `<b>${msg}</b><br>`);
+  });
+  const r = document.getElementById("fbReset");
+  if (r) r.onclick = e => { e.preventDefault(); setOffset(0); render(); };
+}
+
+function diffBadge(info) {
+  return info ? `<span class="diff" style="color:${info.color};border-color:${info.color}">${info.arrow} ${info.text}</span>` : "";
+}
+
+function cardHTML(loc) {
+    const d = state.data[loc.id];
+    const active = loc.id === state.selected ? " active" : "";
+    const open = `<div class="card${active}${loc.fixed ? " fixed" : ""}" data-id="${loc.id}">` +
+      (loc.fixed ? "" : `<button class="rm" data-rm="${loc.id}" title="삭제">✕</button>`);
+    if (!d) return `${open}<div class="name">${esc(loc.name)}</div><div class="sub">불러오는 중…</div></div>`;
+    if (d.error) return `${open}<div class="name">${esc(loc.name)}</div><div class="sub" style="color:var(--verybad)">${esc(d.error)}</div></div>`;
+    const c = d.weather.current, dy = d.weather.daily;
+    const w = wmo(c.weather_code, c.is_day);
+    const diff = diffInfo(c.temperature_2m, yesterdaySameHour(d.weather));
+    const plan = outfitPlan(d.weather, d.air);
+    return `${open}
+      <div class="name">${loc.fixed ? "⭐ " : ""}${esc(loc.name)}</div>
+      <div class="sub">${fmtLocalClock(d.weather)}</div>
+      <div class="row">
+        <div>
+          <div class="temp">${r0(c.temperature_2m)}°</div>
+          <div class="desc">${w.text}</div>
+          <div class="hl">최고 ${r0(dy.temperature_2m_max[TODAY])}° · 최저 ${r0(dy.temperature_2m_min[TODAY])}°</div>
+        </div>
+        <div class="icon">${w.icon}</div>
+      </div>
+      ${diffBadge(diff)}
+      ${plan ? `<div class="c-outfit">${plan.o.icon} ${plan.when} 출근: ${(plan.o.outer.startsWith("필요 없어요") ? plan.o.top : plan.o.outer).split("·")[0]}</div>` : ""}
+    </div>`;
+}
+
+function renderCards() {
+  document.getElementById("cards").innerHTML = FIXED.map(cardHTML).join("");
+  const customEl = document.getElementById("customCards");
+  document.getElementById("customTitle").style.display = state.custom.length ? "" : "none";
+  customEl.innerHTML = state.custom.map(cardHTML).join("");
+  document.querySelectorAll(".card").forEach(c => c.onclick = e => {
+    if (e.target.dataset.rm) { removeLocation(e.target.dataset.rm); return; }
+    state.selected = c.dataset.id; render();
+  });
+}
+
+function removeLocation(id) {
+  state.custom = state.custom.filter(l => l.id !== id);
+  delete state.data[id];
+  saveCustom();
+  if (state.selected === id) state.selected = FIXED[0].id;
+  render();
+}
+
+// ---- 지역 검색 (OpenStreetMap Nominatim) ----
+function toPlace(r) {
+  const parts = r.display_name.split(", ").filter(p => !/^[\d-]+$/.test(p)); // 우편번호·번지 제거
+  const country = parts[parts.length - 1];
+  const region = parts.slice(1, -1);
+  const isKorea = country === "대한민국";
+  const name = parts[0];
+  const sub = isKorea
+    ? [...region].reverse().slice(0, 4).join(" ")            // 서울특별시 강남구 역삼1동 …
+    : [...region.slice(-2), country].join(", ");
+  return { name, sub: sub || country, full: r.display_name, lat: +r.lat, lon: +r.lon };
+}
+
+async function searchPlaces(q) {
+  const box = document.getElementById("results");
+  box.innerHTML = `<div class="r-msg">검색 중…</div>`;
+  try {
+    const u = new URL("https://nominatim.openstreetmap.org/search");
+    u.search = new URLSearchParams({ q, format: "jsonv2", limit: 8, "accept-language": "ko" });
+    const res = await fetch(u);
+    if (!res.ok) throw new Error(res.status);
+    const list = await res.json();
+    // 거의 같은 위치는 하나로
+    const seen = new Set();
+    state.results = list.map(toPlace).filter(p => {
+      const k = p.lat.toFixed(2) + "," + p.lon.toFixed(2) + p.name;
+      if (seen.has(k)) return false; seen.add(k); return true;
+    });
+    if (!state.results.length) { box.innerHTML = `<div class="r-msg">"${esc(q)}" 검색 결과가 없어요. 시·구·동 이름이나 역 이름으로 다시 검색해보세요.</div>`; return; }
+    box.innerHTML = state.results.map((p, i) => `
+      <button class="r-item" data-i="${i}">
+        <span class="r-name">📍 ${esc(p.name)}</span>
+        <span class="r-sub">${esc(p.sub)}</span>
+      </button>`).join("");
+    box.querySelectorAll(".r-item").forEach(b => b.onclick = () => addLocation(state.results[+b.dataset.i]));
+  } catch (e) {
+    box.innerHTML = `<div class="r-msg" style="color:var(--verybad)">검색에 실패했어요. 잠시 후 다시 시도해주세요.</div>`;
+  }
+}
+
+async function addLocation(p) {
+  document.getElementById("results").innerHTML = "";
+  document.getElementById("q").value = "";
+  const id = "c_" + p.lat.toFixed(3) + "_" + p.lon.toFixed(3);
+  const already = allLocations().find(l => l.id === id);
+  if (!already) {
+    state.custom.push({ id, name: p.name, sub: p.sub, lat: p.lat, lon: p.lon });
+    saveCustom();
+  }
+  state.selected = id;
+  render();
+  if (!state.data[id] || state.data[id].error) {
+    const loc = allLocations().find(l => l.id === id);
+    try { state.data[id] = await fetchLocation(loc); }
+    catch (e) { state.data[id] = { error: e.message || "오류" }; }
+    render();
+  }
+  document.getElementById("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("searchForm").onsubmit = e => {
+  e.preventDefault();
+  const q = document.getElementById("q").value.trim();
+  if (q) searchPlaces(q);
+};
+
+function renderDetail() {
+  const el = document.getElementById("detail");
+  const loc = allLocations().find(l => l.id === state.selected) || FIXED[0];
+  const d = state.data[loc.id];
+  if (!d) { el.innerHTML = `<div class="loading">불러오는 중…</div>`; return; }
+  if (d.error) { el.innerHTML = `<div class="error">${loc.name}: ${d.error}</div>`; return; }
+
+  const { weather, air } = d;
+  const c = weather.current, h = weather.hourly, dy = weather.daily;
+  const w = wmo(c.weather_code, c.is_day);
+  const pm10 = pmGrade(air?.pm10, "pm10"), pm25 = pmGrade(air?.pm2_5, "pm25");
+  const hm = s => s.slice(11, 16);
+
+  // 시간별: 현재 시각부터 24시간
+  const curHour = c.time.slice(0, 13) + ":00";
+  let start = h.time.indexOf(curHour); if (start < 0) start = 0;
+  const hours = [];
+  for (let i = start; i < Math.min(start + 24, h.time.length); i++) {
+    const hw = wmo(h.weather_code[i], h.is_day[i]);
+    const label = i === start ? "지금" : parseInt(h.time[i].slice(11, 13)) + "시";
+    const pp = h.precipitation_probability[i];
+    hours.push(`<div class="hour"><div class="h">${label}</div><div class="i">${hw.icon}</div>
+      <div class="t">${r0(h.temperature_2m[i])}°</div><div class="p">${pp >= 20 ? "💧" + pp + "%" : ""}</div></div>`);
+  }
+
+  // 주간
+  const minAll = Math.min(...dy.temperature_2m_min), maxAll = Math.max(...dy.temperature_2m_max);
+  const span = Math.max(1, maxAll - minAll);
+  const days = dy.time.map((t, i) => {
+    const dt = new Date(t + "T00:00:00Z");
+    const label = i === 0 ? "어제" : i === TODAY ? "오늘" : `${DAYS[dt.getUTCDay()]} ${dt.getUTCDate()}일`;
+    const dw = wmo(dy.weather_code[i]);
+    const lo = dy.temperature_2m_min[i], hi = dy.temperature_2m_max[i];
+    const left = (lo - minAll) / span * 100, width = (hi - lo) / span * 100;
+    const pp = dy.precipitation_probability_max[i];
+    return `<div class="day${i === 0 ? " past" : ""}">
+      <div class="d">${label}${pp >= 20 ? `<span class="pp">💧${pp}%</span>` : ""}</div>
+      <div class="i" title="${dw.text}">${dw.icon}</div>
+      <div class="lo">${r0(lo)}°</div>
+      <div class="bar"><span style="left:${left}%;width:${Math.max(width, 3)}%"></span></div>
+      <div class="hi">${r0(hi)}°</div>
+    </div>`;
+  }).join("");
+
+  // 어제 대비
+  const yNow = yesterdaySameHour(weather);
+  const nowDiff = diffInfo(c.temperature_2m, yNow);
+  const hiDiff = diffInfo(dy.temperature_2m_max[TODAY], dy.temperature_2m_max[0]);
+  const loDiff = diffInfo(dy.temperature_2m_min[TODAY], dy.temperature_2m_min[0]);
+  const cmp = (label, today, yest, info) => `<div class="cmp">
+      <div class="k">${label}</div>
+      <div class="v">${r0(today)}° <span style="color:${info?.color}">${info ? info.arrow + " " + info.short : ""}</span></div>
+      <div class="y">어제 ${yest != null ? r0(yest) + "°" : "-"}</div>
+    </div>`;
+
+  el.innerHTML = `
+    <h2>${loc.fixed ? "⭐ " : ""}${esc(loc.sub)}</h2>
+    <div class="clock">현지 시각 ${fmtLocalClock(weather)} · ${weather.timezone}</div>
+    <div class="now">
+      <div class="icon">${w.icon}</div>
+      <div class="big">${r0(c.temperature_2m)}°</div>
+      <div class="txt">
+        <div>${w.text}</div>
+        <div>체감 ${r0(c.apparent_temperature)}° · 최고 ${r0(dy.temperature_2m_max[TODAY])}° / 최저 ${r0(dy.temperature_2m_min[TODAY])}°</div>
+        <div style="margin-top:6px">${diffBadge(nowDiff)}</div>
+      </div>
+    </div>
+    ${outfitHTML(outfitPlan(weather, air))}
+    <div class="section-title">어제와 비교</div>
+    <div class="cmps">
+      ${cmp("지금 (어제 이 시간)", c.temperature_2m, yNow, nowDiff)}
+      ${cmp("최고기온", dy.temperature_2m_max[TODAY], dy.temperature_2m_max[0], hiDiff)}
+      ${cmp("최저기온", dy.temperature_2m_min[TODAY], dy.temperature_2m_min[0], loDiff)}
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="k">습도</div><div class="v">${c.relative_humidity_2m}%</div></div>
+      <div class="stat"><div class="k">바람</div><div class="v">${windDir(c.wind_direction_10m)} ${c.wind_speed_10m.toFixed(1)} m/s</div></div>
+      <div class="stat"><div class="k">강수량 (현재)</div><div class="v">${c.precipitation} mm</div></div>
+      <div class="stat"><div class="k">구름</div><div class="v">${c.cloud_cover}%</div></div>
+      <div class="stat"><div class="k">미세먼지 PM10</div><div class="v"><span class="aq" style="color:${pm10.c}">${pm10.t}</span> ${air?.pm10 != null ? r0(air.pm10) + "㎍" : ""}</div></div>
+      <div class="stat"><div class="k">초미세먼지 PM2.5</div><div class="v"><span class="aq" style="color:${pm25.c}">${pm25.t}</span> ${air?.pm2_5 != null ? r0(air.pm2_5) + "㎍" : ""}</div></div>
+      <div class="stat"><div class="k">자외선 (최대)</div><div class="v">${uvGrade(dy.uv_index_max[TODAY])} ${dy.uv_index_max[TODAY] != null ? dy.uv_index_max[TODAY].toFixed(1) : ""}</div></div>
+      <div class="stat"><div class="k">일출 / 일몰</div><div class="v">${hm(dy.sunrise[TODAY])} / ${hm(dy.sunset[TODAY])}</div></div>
+    </div>
+    <div class="section-title">시간별 예보</div>
+    <div class="hourly">${hours.join("")}</div>
+    <div class="section-title">7일 예보</div>
+    <div class="daily">${days}</div>
+  `;
+}
+
+function render() { renderCards(); renderDetail(); bindOutfitFeedback(); }
+
+document.getElementById("refreshBtn").onclick = loadAll;
+render();
+loadAll();
+setInterval(loadAll, 10 * 60 * 1000);   // 10분마다 갱신
+setInterval(renderCards, 60 * 1000);    // 현지 시각 표시 갱신
+</script>
+</body>
+</html>
