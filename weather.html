@@ -67,6 +67,8 @@
   .hour .i { font-size: 22px; margin: 4px 0; }
   .hour .t { font-weight: 600; }
   .hour .p { color: var(--accent); font-size: 11px; margin-top: 2px; min-height: 13px; }
+  .hour .mm, .day .mm { color: var(--accent); font-size: 11px; font-weight: 600; }
+  .hour .mm { min-height: 13px; }
 
   .daily { display: flex; flex-direction: column; }
   .day { display: grid; grid-template-columns: 70px 34px 46px 1fr 46px; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
@@ -233,8 +235,8 @@ async function fetchLocation(loc) {
   w.search = new URLSearchParams({
     latitude: loc.lat, longitude: loc.lon, timezone: "auto", forecast_days: 7, past_days: 1,
     current: "temperature_2m,apparent_temperature,relative_humidity_2m,is_day,weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,cloud_cover",
-    hourly: "temperature_2m,apparent_temperature,weather_code,precipitation_probability,is_day,wind_speed_10m",
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max",
+    hourly: "temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,is_day,wind_speed_10m",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max",
     wind_speed_unit: "ms",
   });
   const a = new URL("https://air-quality-api.open-meteo.com/v1/air-quality");
@@ -350,8 +352,10 @@ function outfitPlan(weather, air) {
     else tips.push(`↔️ 어제 아침과 체감이 비슷해요 (${d >= 0 ? "+" : ""}${d}°). 어제 옷차림이 괜찮았다면 그대로!`);
   }
   if (snow) tips.push("❄️ 눈 소식이 있어요. 미끄럽지 않은 신발을 신으세요.");
-  if (rainMax >= 60) tips.push(`☂️ 비 올 확률 ${rainMax}% — 우산 꼭 챙기세요.`);
-  else if (rainMax >= 30) tips.push(`🌂 비 올 확률 ${rainMax}% — 접이식 우산을 가방에 넣어두세요.`);
+  const rainSum  = dy.precipitation_sum?.[di] ?? 0;
+  const rainAmt  = rainSum >= 0.1 ? `, 예상 강수량 ${fmtMm(rainSum)}` : "";
+  if (rainMax >= 60) tips.push(`☂️ 비 올 확률 ${rainMax}%${rainAmt} — 우산 꼭 챙기세요.`);
+  else if (rainMax >= 30) tips.push(`🌂 비 올 확률 ${rainMax}%${rainAmt} — 접이식 우산을 가방에 넣어두세요.`);
   if (windMax >= 6) tips.push(`💨 바람이 강해요 (최대 ${windMax.toFixed(1)} m/s). 바람 막아주는 겉옷이 좋아요.`);
   if (uv >= 6) tips.push(`🧴 자외선이 강해요 (${uv.toFixed(1)}). 선크림을 바르세요.`);
   if (di === TODAY && air && ((air.pm10 ?? 0) > 80 || (air.pm2_5 ?? 0) > 35))
@@ -547,8 +551,10 @@ function renderDetail() {
     const hw = wmo(h.weather_code[i], h.is_day[i]);
     const label = i === start ? "지금" : parseInt(h.time[i].slice(11, 13)) + "시";
     const pp = h.precipitation_probability[i];
+    const mm = h.precipitation?.[i] ?? 0;
     hours.push(`<div class="hour"><div class="h">${label}</div><div class="i">${hw.icon}</div>
-      <div class="t">${r0(h.temperature_2m[i])}°</div><div class="p">${pp >= 20 ? "💧" + pp + "%" : ""}</div></div>`);
+      <div class="t">${r0(h.temperature_2m[i])}°</div><div class="p">${pp >= 20 ? "💧" + pp + "%" : ""}</div>
+      <div class="mm">${mm >= 0.1 ? fmtMm(mm) : ""}</div></div>`);
   }
 
   // 주간
@@ -561,8 +567,10 @@ function renderDetail() {
     const lo = dy.temperature_2m_min[i], hi = dy.temperature_2m_max[i];
     const left = (lo - minAll) / span * 100, width = (hi - lo) / span * 100;
     const pp = dy.precipitation_probability_max[i];
+    const mm = dy.precipitation_sum?.[i] ?? 0;
+    const rainTxt = [pp >= 20 ? `💧${pp}%` : "", mm >= 0.1 ? `<span class="mm">${fmtMm(mm)}</span>` : ""].filter(Boolean).join(" · ");
     return `<div class="day${i === 0 ? " past" : ""}">
-      <div class="d">${label}${pp >= 20 ? `<span class="pp">💧${pp}%</span>` : ""}</div>
+      <div class="d">${label}${rainTxt ? `<span class="pp">${rainTxt}</span>` : ""}</div>
       <div class="i" title="${dw.text}">${dw.icon}</div>
       <div class="lo">${r0(lo)}°</div>
       <div class="bar"><span style="left:${left}%;width:${Math.max(width, 3)}%"></span></div>
@@ -616,6 +624,9 @@ function renderDetail() {
     <div class="daily">${days}</div>
   `;
 }
+
+// 강수량 표시: 1mm 미만은 소수 첫째 자리, 10mm 이상은 정수
+function fmtMm(v) { return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + "mm"; }
 
 function render() { renderCards(); renderDetail(); bindOutfitFeedback(); }
 
