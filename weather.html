@@ -134,11 +134,20 @@
   .group-title { font-size: 14px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; }
   .card { position: relative; }
   .card.fixed { background: linear-gradient(180deg, var(--accent-soft), var(--card) 70%); }
-  .rm {
-    position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%;
-    border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
+  .acts { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; }
+  .act {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1;
   }
-  .rm:hover { background: var(--line); color: var(--text); }
+  .act:hover { background: var(--line); color: var(--text); }
+  .card .name { padding-right: 58px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 4px 2px 8px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50;
+    background: var(--text); color: var(--card); border-radius: 999px; padding: 10px 16px;
+    font-size: 13px; display: flex; gap: 12px; align-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.2);
+  }
+  .toast button { background: none; border: none; color: var(--accent-soft); font-weight: 700; cursor: pointer; font-size: 13px; }
   .loading, .error { color: var(--muted); padding: 30px; text-align: center; }
   .error { color: var(--verybad); }
   footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
@@ -165,9 +174,9 @@
   </form>
   <div class="results" id="results"></div>
 
-  <div class="group-title">⭐ 내 지역</div>
+  <div class="group-title">⭐ 내 지역 <span style="font-weight:400;font-size:12px">— ☆ 눌러 빼기 · ✕ 삭제</span></div>
   <div class="grid" id="cards"></div>
-  <div class="group-title" id="customTitle" style="display:none">추가한 지역</div>
+  <div class="group-title" id="customTitle" style="display:none">추가한 지역 <span style="font-weight:400;font-size:12px">— ☆ 눌러 내 지역에 넣기</span></div>
   <div class="grid" id="customCards"></div>
   <div class="detail" id="detail"><div class="loading">날씨 정보를 불러오는 중입니다…</div></div>
 
@@ -175,23 +184,35 @@
 </div>
 
 <script>
-// 고정 지역 (항상 맨 위에 강조 표시)
-const FIXED = [
+// 내 지역 기본값 (처음 열었을 때만 사용 — 이후엔 브라우저에 저장된 목록을 씀)
+const DEFAULT_FAV = [
   { id: "wonju",  name: "원주 무실동",       sub: "강원도 원주시 무실동",        lat: 37.3346, lon: 127.9283, fixed: true },
   { id: "yangjae",name: "서울 양재역",       sub: "서울특별시 서초구 양재역",    lat: 37.4844, lon: 127.0343, fixed: true },
   { id: "jeonju", name: "전주 진북동",       sub: "전북 전주시 덕진구 진북동",   lat: 35.8310, lon: 127.1430, fixed: true },
   { id: "melb",   name: "멜버른 CBD",        sub: "호주 빅토리아주 멜버른",       lat: -37.8136, lon: 144.9631, fixed: true },
 ];
 
-// 검색으로 추가한 지역 (브라우저에 저장)
+// 내 지역 · 검색으로 추가한 지역 (둘 다 브라우저에 저장)
+const FAV_KEY = "weather.favLocations";
 const STORE_KEY = "weather.customLocations";
+function loadFav() {
+  try {
+    const v = JSON.parse(localStorage.getItem(FAV_KEY));
+    if (Array.isArray(v)) return v.map(l => ({ ...l, fixed: true }));
+  } catch {}
+  return DEFAULT_FAV.map(l => ({ ...l }));
+}
 function loadCustom() {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+  try { return (JSON.parse(localStorage.getItem(STORE_KEY)) || []).map(l => ({ ...l, fixed: false })); } catch { return []; }
 }
 function saveCustom() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state.custom)); } catch {}
+  try {
+    localStorage.setItem(FAV_KEY, JSON.stringify(state.fav));
+    localStorage.setItem(STORE_KEY, JSON.stringify(state.custom));
+  } catch {}
 }
-const allLocations = () => [...FIXED, ...state.custom];
+const allLocations = () => [...state.fav, ...state.custom];
+const firstId = () => allLocations()[0]?.id || null;
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
 
 const WMO = {
@@ -228,7 +249,8 @@ function uvGrade(v) {
   if (v < 11) return "매우높음"; return "위험";
 }
 
-const state = { data: {}, selected: FIXED[0].id, custom: loadCustom(), results: [] };
+const state = { data: {}, selected: null, fav: loadFav(), custom: loadCustom(), results: [] };
+state.selected = firstId();
 
 async function fetchLocation(loc) {
   const w = new URL("https://api.open-meteo.com/v1/forecast");
@@ -422,7 +444,11 @@ function cardHTML(loc) {
     const d = state.data[loc.id];
     const active = loc.id === state.selected ? " active" : "";
     const open = `<div class="card${active}${loc.fixed ? " fixed" : ""}" data-id="${loc.id}">` +
-      (loc.fixed ? "" : `<button class="rm" data-rm="${loc.id}" title="삭제">✕</button>`);
+      `<div class="acts">` +
+        (loc.fixed
+          ? `<button class="act" data-unfav="${loc.id}" title="내 지역에서 빼기">⭐</button>`
+          : `<button class="act" data-fav="${loc.id}" title="내 지역에 넣기">☆</button>`) +
+        `<button class="act" data-rm="${loc.id}" title="삭제">✕</button></div>`;
     if (!d) return `${open}<div class="name">${esc(loc.name)}</div><div class="sub">불러오는 중…</div></div>`;
     if (d.error) return `${open}<div class="name">${esc(loc.name)}</div><div class="sub" style="color:var(--verybad)">${esc(d.error)}</div></div>`;
     const c = d.weather.current, dy = d.weather.daily;
@@ -430,7 +456,7 @@ function cardHTML(loc) {
     const diff = diffInfo(c.temperature_2m, yesterdaySameHour(d.weather));
     const plan = outfitPlan(d.weather, d.air);
     return `${open}
-      <div class="name">${loc.fixed ? "⭐ " : ""}${esc(loc.name)}</div>
+      <div class="name">${esc(loc.name)}</div>
       <div class="sub">${fmtLocalClock(d.weather)}</div>
       <div class="row">
         <div>
@@ -446,22 +472,59 @@ function cardHTML(loc) {
 }
 
 function renderCards() {
-  document.getElementById("cards").innerHTML = FIXED.map(cardHTML).join("");
+  document.getElementById("cards").innerHTML = state.fav.length
+    ? state.fav.map(cardHTML).join("")
+    : `<div class="empty">내 지역이 비어 있어요. 위에서 지역을 검색해 추가한 뒤 ☆를 눌러 넣어보세요.</div>`;
   const customEl = document.getElementById("customCards");
   document.getElementById("customTitle").style.display = state.custom.length ? "" : "none";
   customEl.innerHTML = state.custom.map(cardHTML).join("");
   document.querySelectorAll(".card").forEach(c => c.onclick = e => {
-    if (e.target.dataset.rm) { removeLocation(e.target.dataset.rm); return; }
+    const ds = e.target.dataset;
+    if (ds.rm) { removeLocation(ds.rm); return; }
+    if (ds.fav) { moveLocation(ds.fav, true); return; }
+    if (ds.unfav) { moveLocation(ds.unfav, false); return; }
     state.selected = c.dataset.id; render();
   });
 }
 
-function removeLocation(id) {
-  state.custom = state.custom.filter(l => l.id !== id);
-  delete state.data[id];
+// 내 지역 ⇄ 추가한 지역 옮기기
+function moveLocation(id, toFav) {
+  const from = toFav ? state.custom : state.fav;
+  const loc = from.find(l => l.id === id);
+  if (!loc) return;
+  if (toFav) { state.custom = state.custom.filter(l => l.id !== id); state.fav.push({ ...loc, fixed: true }); }
+  else { state.fav = state.fav.filter(l => l.id !== id); state.custom.unshift({ ...loc, fixed: false }); }
   saveCustom();
-  if (state.selected === id) state.selected = FIXED[0].id;
   render();
+}
+
+// 삭제 (몇 초 동안 되돌리기 가능)
+let undoTimer = null;
+function removeLocation(id) {
+  const inFav = state.fav.findIndex(l => l.id === id);
+  const list = inFav >= 0 ? state.fav : state.custom;
+  const idx = inFav >= 0 ? inFav : state.custom.findIndex(l => l.id === id);
+  if (idx < 0) return;
+  const [loc] = list.splice(idx, 1);
+  saveCustom();
+  if (state.selected === id) state.selected = firstId();
+  render();
+  showUndo(`'${loc.name}' 삭제됨`, () => {
+    (loc.fixed ? state.fav : state.custom).splice(idx, 0, loc);
+    saveCustom();
+    state.selected = loc.id;
+    render();
+  });
+}
+function showUndo(msg, undo) {
+  document.querySelector(".toast")?.remove();
+  clearTimeout(undoTimer);
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = `<span>${esc(msg)}</span><button type="button">되돌리기</button>`;
+  t.querySelector("button").onclick = () => { t.remove(); clearTimeout(undoTimer); undo(); };
+  document.body.appendChild(t);
+  undoTimer = setTimeout(() => t.remove(), 5000);
 }
 
 // ---- 지역 검색 (OpenStreetMap Nominatim) ----
@@ -532,7 +595,8 @@ document.getElementById("searchForm").onsubmit = e => {
 
 function renderDetail() {
   const el = document.getElementById("detail");
-  const loc = allLocations().find(l => l.id === state.selected) || FIXED[0];
+  const loc = allLocations().find(l => l.id === state.selected) || allLocations()[0];
+  if (!loc) { el.innerHTML = `<div class="loading">지역을 검색해서 추가해주세요.</div>`; return; }
   const d = state.data[loc.id];
   if (!d) { el.innerHTML = `<div class="loading">불러오는 중…</div>`; return; }
   if (d.error) { el.innerHTML = `<div class="error">${loc.name}: ${d.error}</div>`; return; }
